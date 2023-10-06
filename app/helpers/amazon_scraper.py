@@ -392,9 +392,10 @@ def get_product_data(product_url):
 def scrap_amazon():
     """ This is the main method of the scrapper """
 
+    print(f"[+ Amazon +] Search Keyword: {config.SEARCH_KEYWORD}")
     product_links = scrap_product_listing_url(config.SEARCH_KEYWORD, config.NUMBER_OF_PRODUCTS)
 
-    print(f"[+ Amazon +] Product Link is found for {config.SEARCH_KEYWORD})")
+    print(f"[+ Amazon +] Product Link is found for {config.SEARCH_KEYWORD}")
     print(f"[+ Amazon +] Links: {product_links}")
 
     product_information = []
