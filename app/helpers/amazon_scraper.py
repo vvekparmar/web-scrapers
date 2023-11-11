@@ -1,6 +1,5 @@
 import time
 import unicodedata
-from app import config
 
 from selenium import webdriver
 from bs4 import BeautifulSoup as bs
@@ -81,17 +80,28 @@ def get_reviews(reviews_url, number_of_reviews=5):
             break
 
         for review in reviews_list_tag:
+
             review_text = "\n".join([text.get_text(strip=True) for text in review.select(
                 ".review-text-content span")])
-            reviews.append(clean_text(review_text))
+
+            rating_element = review.find('i', {'class': 'a-icon-star'})
+
+            rating = rating_element.find('span', {'class': 'a-icon-alt'}).text
+            txt = clean_text(review_text)
+
+            helpful_element = review.find('span', {'data-hook': 'helpful-vote-statement'})
+            if helpful_element:
+                helpful_text = extract_number_from_string(helpful_element.text)
+            else:
+                helpful_text = 0
+
+            reviews.append({"review_text": txt, "rating": rating, "helpful_count": helpful_text})
 
         if len(reviews_list_tag) < 10:
             break
 
         page_num += 1
 
-    if reviews:
-        reviews = [clean_text(text) for text in reviews]
     return reviews[:number_of_reviews]
 
 
@@ -235,6 +245,20 @@ def get_image_urls(soup):
     return images
 
 
+def get_customer_retry_reviews(soup):
+    title_rating_tag = soup.select_one('div', {'id': 'cm_cr_dp_d_rating_histogram'})
+
+    title_ratings = {}
+    if title_rating_tag:
+        rows = title_rating_tag.select(".a-normal.a-align-center.a-spacing-base tr")
+        for row in rows:
+            td = row.select("td")
+            text = td[0].select_one("a.a-link-normal").get_text(strip=True)
+            value = td[2].get_text(strip=True)
+            title_ratings[text] = value
+    return title_ratings
+
+
 def get_customer_reviews(soup):
     """ This method is used to get the customer reviews of the product """
 
@@ -302,7 +326,39 @@ def get_price(soup):
     return price
 
 
-def get_product_data(product_url):
+def extract_number_from_string(input_string):
+    # Define a dictionary to map words to numbers
+    word_to_number = {
+        'one': 1,
+        'two': 2,
+        'three': 3,
+        'four': 4,
+        'five': 5,
+        'six': 6,
+        'seven': 7,
+        'eight': 8,
+        'nine': 9,
+        'ten': 10
+    }
+
+    # Split the input string into words
+    words = input_string.split()
+
+    # Iterate through the words and look for a word that can be converted to an integer
+    for word in words:
+        try:
+            x = int(word)
+            return x
+        except Exception:
+            word_lower = word.lower()  # Convert to lowercase for case insensitivity
+            if word_lower in word_to_number:
+                return word_to_number[word_lower]
+
+    # Return 0 if no number is found
+    return 0
+
+
+def get_product_data(product_url, keyword, number_of_reviews):
     """ This method is used to get the product data """
 
     driver = get_chrome_driver()
@@ -351,11 +407,13 @@ def get_product_data(product_url):
         product_overview = get_product_overview(soup)
 
         customer_reviews = get_customer_reviews(soup)
+        if not customer_reviews:
+            customer_reviews = get_customer_retry_reviews(soup)
 
         reviews = []
         if reviews_url := soup.select_one("#cr-pagination-footer-0 .a-text-bold"):
             reviews_url = "https://www.amazon.com" + reviews_url.get("href")
-            reviews = get_reviews(reviews_url, config.NUMBER_REVIEWS)
+            reviews = get_reviews(reviews_url, number_of_reviews)
 
         data = {
             "title": title,
@@ -373,7 +431,7 @@ def get_product_data(product_url):
             "size_chart": size_chart,
             "about_item": about_item,
             "read_review_keywords": read_reviews_keywords,
-            "SEARCH_KEYWORD": config.SEARCH_KEYWORD,
+            "SEARCH_KEYWORD": keyword,
             "color_variants": color_variants,
             "rating_by_features": rating_by_features,
             "accessories": accessories,
@@ -389,19 +447,19 @@ def get_product_data(product_url):
         driver.quit()
 
 
-def scrap_amazon():
+def scrap_amazon(keyword, number_of_products, number_of_reviews):
     """ This is the main method of the scrapper """
 
-    print(f"[+ Amazon +] Search Keyword: {config.SEARCH_KEYWORD}")
-    product_links = scrap_product_listing_url(config.SEARCH_KEYWORD, config.NUMBER_OF_PRODUCTS)
+    print(f"[+ Amazon +] Search Keyword: {keyword}")
+    product_links = scrap_product_listing_url(keyword, number_of_products)
 
-    print(f"[+ Amazon +] Product Link is found for {config.SEARCH_KEYWORD}")
+    print(f"[+ Amazon +] Product Link is found for {keyword}")
     print(f"[+ Amazon +] Links: {product_links}")
 
     product_information = []
     if product_links:
         for product_url in product_links:
-            result = get_product_data(product_url)
+            result = get_product_data(product_url, keyword, number_of_reviews)
             product_information.append(result)
     else:
         print("[+ Amazon +] Unable to fetch product links")

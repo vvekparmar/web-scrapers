@@ -240,7 +240,6 @@ def scrap_walmart():
     data = []
     if product_links:
         for link in product_links:
-            time.sleep(30)
             product_details = scrap_product_data(link)
             data.append(product_details)
     else:

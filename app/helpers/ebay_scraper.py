@@ -1,5 +1,4 @@
 import requests
-from app import config
 from bs4 import BeautifulSoup as BS
 from fake_useragent import UserAgent
 
@@ -161,7 +160,7 @@ def get_size_variants(soup):
     return []
 
 
-def get_reviews(seller_username, product_id):
+def get_reviews(seller_username, product_id, number_of_reviews):
     """ This method is used to get the reviews the product """
 
     reviews = []
@@ -184,17 +183,17 @@ def get_reviews(seller_username, product_id):
 
             feedback_tag = driver.find_elements(By.CSS_SELECTOR, ".card__text")
             for review in feedback_tag:
-                if len(reviews) >= config.NUMBER_REVIEWS:
+                if len(reviews) >= number_of_reviews:
                     reviews_fetched = True
                     break
                 else:
                     reviews.append(review.text.strip())
             page_num = 1
 
-    return reviews[:config.NUMBER_REVIEWS]
+    return reviews[:number_of_reviews]
 
 
-def scrap_product_urls(keyword):
+def scrap_product_urls(keyword, number_of_products):
     """ This method is used to scrap the product urls """
 
     keyword = "+".join(keyword.split(" "))
@@ -202,11 +201,11 @@ def scrap_product_urls(keyword):
     url = f"https://www.ebay.com/sch/i.html?_from=R40&_nkw={keyword}&_sacat=0&LH_TitleDesc=0&_pgn={page_num}"
     soup = get_page_source_code(url)
     if links_tag := soup.select(".clearfix > .s-item__pl-on-bottom .s-item__link"):
-        return [url.get("href") for url in links_tag][:config.NUMBER_OF_PRODUCTS]
+        return [url.get("href") for url in links_tag][:number_of_products]
     return None
 
 
-def scrap_product_data(product_url):
+def scrap_product_data(product_url, keyword, number_of_reviews):
     """ This method is used to scrap the product data """
 
     print(f"[+ Ebay +] Scraping data from: {product_url}")
@@ -224,10 +223,11 @@ def scrap_product_data(product_url):
     items_specific_details = get_item_specification(soup)
     product_id = product_url.split("?")[0].split("/")[-1]
     product_description = get_item_description(product_id)
-    reviews = get_reviews(seller_username, product_id)
+    reviews = get_reviews(seller_username, product_id, number_of_reviews)
 
     data = {
         "product_id": product_id,
+        "SEARCH_KEYWORD": keyword,
         "title": title,
         "price": price,
         "description": product_description,
@@ -243,18 +243,18 @@ def scrap_product_data(product_url):
     return data
 
 
-def scrap_ebay():
+def scrap_ebay(keyword, number_of_products, number_of_reviews):
     """ This method is used to scrap ebay information """
 
-    print(f"[+ Ebay +] Search Keyword: {config.SEARCH_KEYWORD}")
-    product_links = scrap_product_urls(config.SEARCH_KEYWORD)
-    print(f"[+ Ebay +] Product Link is found for {config.SEARCH_KEYWORD}")
+    print(f"[+ Ebay +] Search Keyword: {keyword}")
+    product_links = scrap_product_urls(keyword, number_of_products)
+    print(f"[+ Ebay +] Product Link is found for {keyword}")
     print(f"[+ Ebay +] Links: {product_links}")
 
     data = []
     if product_links:
         for link in product_links:
-            product_details = scrap_product_data(link)
+            product_details = scrap_product_data(link, keyword, number_of_reviews)
             data.append(product_details)
     else:
         print("[+ Ebay +] Unable to fetch product links")
