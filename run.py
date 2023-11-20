@@ -22,8 +22,8 @@ def amazon_scrapper(data: RequestBody):
     try:
         product_info = scrap_amazon(data.keyword, data.number_of_products, data.number_of_reviews)
         return product_info
-    except Exception:
-        return {}
+    except Exception as e:
+        return {"error": e}
 
 @fastapi_app.post('/ebay-scraper')
 def ebay_scrapper(data: RequestBody):
@@ -31,7 +31,7 @@ def ebay_scrapper(data: RequestBody):
         product_info = scrap_ebay(data.keyword, data.number_of_products, data.number_of_reviews)
         return product_info
     except Exception:
-        return {}
+        return {"error": e}
 
 
 if __name__ == "__main__":
