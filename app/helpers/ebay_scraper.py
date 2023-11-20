@@ -23,6 +23,11 @@ def get_chrome_driver(use_user_agent=False):
     if use_user_agent:
         options.add_argument(f"user-agent={get_random_user_agent()}")
 
+    options.add_argument('headless')
+    options.add_argument('--no-sandbox')
+    options.add_argument('--disable-infobars')
+    options.add_argument('--disable-dev-shm-usage')
+    options.add_argument('--remote-debugging-port=9222')
     options.add_argument("start-maximized")
     options.add_argument("headless")
 
