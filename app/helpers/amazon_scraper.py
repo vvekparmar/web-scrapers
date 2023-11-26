@@ -1,10 +1,34 @@
-import time
 import unicodedata
+from bs4 import BeautifulSoup as bs
+import undetected_chromedriver as uc
 
 from selenium import webdriver
-from bs4 import BeautifulSoup as bs
+from selenium_stealth import stealth
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.options import Options
+
+options = uc.ChromeOptions()
+options.add_argument('headless')
+options.add_argument('--no-sandbox')
+options.add_argument('--start-maximized')
+options.add_argument('--disable-infobars')
+options.add_argument('--disable-extensions')
+options.add_argument('--disable-popup-blocking')
+options.add_argument('--disable-dev-shm-usage')
+options.add_argument('--remote-debugging-port=9222')
+options.add_argument('--disable-blink-features=AutomationControlled')
+
+driver = uc.Chrome(use_subprocess=True, options=options)
+
+stealth(driver,
+        user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/83.0.4103.53 Safari/537.36',
+        languages=["en-US", "en"],
+        vendor="Google Inc.",
+        platform="Win32",
+        webgl_vendor="Intel Inc.",
+        renderer="Intel Iris OpenGL Engine",
+        fix_hairline=True,
+        )
 
 
 def get_chrome_driver():
@@ -13,20 +37,41 @@ def get_chrome_driver():
     options = Options()
     options.add_argument('headless')
     options.add_argument('--no-sandbox')
+    options.add_argument('--start-maximized')
     options.add_argument('--disable-infobars')
+    options.add_argument('--disable-extensions')
+    options.add_argument('--disable-popup-blocking')
     options.add_argument('--disable-dev-shm-usage')
     options.add_argument('--remote-debugging-port=9222')
+    options.add_argument('--disable-blink-features=AutomationControlled')
+
+    options.add_experimental_option("excludeSwitches", ["enable-automation"])
+    options.add_experimental_option('useAutomationExtension', False)
+
     driver = webdriver.Chrome(options=options)
-    driver.maximize_window()
-    driver.implicitly_wait(10)
+
+    stealth(driver,
+            user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/83.0.4103.53 Safari/537.36',
+            languages=["en-US", "en"],
+            vendor="Google Inc.",
+            platform="Win32",
+            webgl_vendor="Intel Inc.",
+            renderer="Intel Iris OpenGL Engine",
+            fix_hairline=True,
+            )
+
     return driver
 
 
 def get_page_source_code(url):
+    global driver
     """ This method is used to get the page source code from the url """
 
-    driver = get_chrome_driver()
+    if not driver:
+        driver = get_chrome_driver()
+
     driver.get(url)
+
     soup = get_soup(driver.page_source)
     return soup
 
@@ -58,15 +103,20 @@ def scrap_product_listing_url(keyword, number_of_products=5):
 
         soup = get_page_source_code(url)
         if soup:
-            asin_list_tag = soup.find_all(attrs={'data-asin': True})
+            asin_list_tag = soup.find_all('div', attrs={
+                'class': 'sg-col-4-of-24 sg-col-4-of-12 s-result-item s-asin sg-col-4-of-16 sg-col s-widget-spacing-small sg-col-4-of-20'})
 
             for data_asin in asin_list_tag:
                 if asin := data_asin['data-asin']:
+
                     if len(product_links) != number_of_products:
                         product_links.append(f"https://amazon.com/dp/{asin.strip()}")
+
                     else:
                         searching = False
+                        break
             page_num += 1
+
     return product_links
 
 
@@ -77,13 +127,14 @@ def get_reviews(reviews_url, number_of_reviews=5):
     reviews = []
 
     while True:
+        if len(reviews) >= number_of_reviews:
+            break
         soup = get_page_source_code(reviews_url + "&pageNumber=" + str(page_num))
         reviews_list_tag = soup.select("div.a-section.review.aok-relative")
 
-        if len(reviews) >= number_of_reviews:
-            break
-
         for review in reviews_list_tag:
+            review_title = review.find('a', {'data-hook': "review-title"}).find_all('span')
+            review_title = [r.text.strip() for r in review_title][-1]
 
             review_text = "\n".join([text.get_text(strip=True) for text in review.select(
                 ".review-text-content span")])
@@ -99,7 +150,11 @@ def get_reviews(reviews_url, number_of_reviews=5):
             else:
                 helpful_text = 0
 
-            reviews.append({"review_text": txt, "rating": rating, "helpful_count": helpful_text})
+            reviews.append(
+                {'review_title': review_title, "review_text": txt, "rating": rating, "helpful_count": helpful_text})
+
+            if len(reviews) >= number_of_reviews:
+                break
 
         if len(reviews_list_tag) < 10:
             break
@@ -157,6 +212,10 @@ def get_sizes(soup):
         size_options = sizes_list_tag.select("option")
         size_options = [option.text.strip() for option in size_options]
         return size_options[1:]
+    options = soup.find_all('li', attrs={'class': 'swatch-list-item-text'})
+    for p in options:
+        sizes.append(p.find('span', {"class": "a-size-base swatch-title-text-display swatch-title-text"}).text.strip())
+    sizes = [s for s in sizes if s]
     return sizes
 
 
@@ -179,10 +238,19 @@ def get_technical_details(soup):
 
 def get_read_review_keyword(soup):
     """ This method is used to read the review keywords """
+    global driver
 
     if read_review_tag := soup.select_one(".cr-lighthouse-terms"):
         tags = [tag.text.strip() for tag in read_review_tag.select(".a-declarative")]
         return tags
+    else:
+        review_element = driver.find_element(By.CSS_SELECTOR, "#reviewsMedley h2")
+        scroll_page_with_pagedown(driver, review_element)
+        time.sleep(1)
+        soup = get_soup(driver.page_source)
+        if read_review_tag := soup.select_one(".cr-lighthouse-terms"):
+            tags = [tag.text.strip() for tag in read_review_tag.select(".a-declarative")]
+            return tags
     return []
 
 
@@ -195,6 +263,14 @@ def get_color_variant(soup):
         for variant in variants:
             alt_text = variant.get("alt")
             color_variants.append(alt_text)
+    else:
+
+        if color_variant_tag := soup.select_one("#tp-inline-twister-dim-values-container"):
+            variants = color_variant_tag.select("li img")
+            for variant in variants:
+                alt_text = variant.get("alt")
+                color_variants.append(alt_text)
+            color_variants = [c for c in color_variants if c]
     return color_variants
 
 
@@ -218,6 +294,10 @@ def get_about_item(soup):
         about_item_list_tag = about_item_tag.select("li span.a-list-item")
         about_item = "\n".join([li.text.strip() for li in about_item_list_tag])
         return about_item
+    else:
+        if about_item_tag := soup.select_one("#productFactsDesktopExpander"):
+            about_item_list_tag = about_item_tag.select("li span.a-list-item")
+            about_item = "\n".join([li.text.strip() for li in about_item_list_tag])
     return about_item
 
 
@@ -289,6 +369,13 @@ def get_product_overview(soup):
             td = row.select("td")
             product_overview[clean_text(td[0].text.strip())] = clean_text(td[1].text.strip())
         return product_overview
+    else:
+        if overview_tag := soup.select_one("#productFactsDesktopExpander"):
+            product_overview = {}
+            overview_list_tag = overview_tag.find_all('div', {'class': "a-fixed-left-grid product-facts-detail"})
+            for a in overview_list_tag:
+                lr = [it.text.strip() for it in a.find_all('span', {'class': 'a-color-base'})]
+                product_overview[lr[0]] = lr[1]
     return product_overview
 
 
@@ -325,13 +412,14 @@ def get_price(soup):
             ".a-price.aok-align-center.reinventPricePriceToPayMargin.priceToPay .a-offscreen").text.strip()
 
     except AttributeError:
-        price = ""
+        price = soup.select(".a-price.a-text-price.a-size-medium.apexPriceToPay .a-offscreen")
+        price = [p.text.strip() for p in price]
+        price = '-'.join(price)
 
     return price
 
 
 def extract_number_from_string(input_string):
-    # Define a dictionary to map words to numbers
     word_to_number = {
         'one': 1,
         'two': 2,
@@ -345,27 +433,23 @@ def extract_number_from_string(input_string):
         'ten': 10
     }
 
-    # Split the input string into words
     words = input_string.split()
-
-    # Iterate through the words and look for a word that can be converted to an integer
     for word in words:
         try:
             x = int(word)
             return x
         except Exception:
-            word_lower = word.lower()  # Convert to lowercase for case insensitivity
+            word_lower = word.lower()
             if word_lower in word_to_number:
                 return word_to_number[word_lower]
 
-    # Return 0 if no number is found
     return 0
 
 
 def get_product_data(product_url, keyword, number_of_reviews):
     """ This method is used to get the product data """
+    global driver
 
-    driver = get_chrome_driver()
     print(f"[+ Amazon +] Scraping data from {product_url}")
 
     try:
@@ -393,6 +477,8 @@ def get_product_data(product_url, keyword, number_of_reviews):
         price = get_price(soup)
         images = get_image_urls(soup)
         description = "\n".join([desc.text.strip() for desc in soup.select("#productDescription span")])
+        if not description:
+            description = soup.find('div', {'class': 'aplus-v2 desktop celwidget'}).text.strip()
         details = get_product_details(soup)
         sizes = get_sizes(soup)
         rating_by_features = get_rate_by_feature(soup)
@@ -447,12 +533,11 @@ def get_product_data(product_url, keyword, number_of_reviews):
     except Exception as e:
         print(f"[+ Amazon +] Exception raised, {e}")
 
-    finally:
-        driver.quit()
-
 
 def scrap_amazon(keyword, number_of_products, number_of_reviews):
     """ This is the main method of the scrapper """
+
+    global driver
 
     print(f"[+ Amazon +] Search Keyword: {keyword}")
     product_links = scrap_product_listing_url(keyword, number_of_products)
@@ -468,4 +553,7 @@ def scrap_amazon(keyword, number_of_products, number_of_reviews):
     else:
         print("[+ Amazon +] Unable to fetch product links")
 
-    return product_information
+    driver.close()
+
+    filtered_product = list(filter(lambda x: x is not None, product_information))
+    return filtered_product
