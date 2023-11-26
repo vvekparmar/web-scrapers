@@ -1,3 +1,4 @@
+import time
 import unicodedata
 from bs4 import BeautifulSoup as bs
 import undetected_chromedriver as uc
@@ -288,7 +289,7 @@ def get_accessories(soup):
 def get_about_item(soup):
     """ This method is used to get about item """
 
-    about_item = None
+    about_item = ""
     if about_item_tag := soup.select_one("#featurebullets_feature_div"):
 
         about_item_list_tag = about_item_tag.select("li span.a-list-item")
@@ -337,7 +338,7 @@ def get_customer_retry_reviews(soup):
         rows = title_rating_tag.select(".a-normal.a-align-center.a-spacing-base tr")
         for row in rows:
             td = row.select("td")
-            text = td[0].select_one("a.a-link-normal").get_text(strip=True)
+            text = td[0].get_text(strip=True)
             value = td[2].get_text(strip=True)
             title_ratings[text] = value
     return title_ratings
@@ -410,6 +411,11 @@ def get_price(soup):
     try:
         price = soup.select_one(
             ".a-price.aok-align-center.reinventPricePriceToPayMargin.priceToPay .a-offscreen").text.strip()
+        if not price:
+            price = soup.select_one(
+                ".a-price.aok-align-center.reinventPricePriceToPayMargin.priceToPay").find('span', {
+                "aria-hidden": "true"}).text.strip()
+
 
     except AttributeError:
         price = soup.select(".a-price.a-text-price.a-size-medium.apexPriceToPay .a-offscreen")
@@ -448,90 +454,98 @@ def extract_number_from_string(input_string):
 
 def get_product_data(product_url, keyword, number_of_reviews):
     """ This method is used to get the product data """
+
     global driver
+    data = {}
 
     print(f"[+ Amazon +] Scraping data from {product_url}")
-
     try:
         driver.get(product_url)
         review_element = driver.find_element(By.CSS_SELECTOR, "#reviewsMedley h2")
         scroll_page_with_pagedown(driver, review_element)
         time.sleep(1)
         soup = get_soup(driver.page_source)
-        title = ""
         if title_tag := soup.select_one("h1#title"):
             title = clean_text(title_tag.get_text(strip=True))
+            data["title"] = title
 
         elif title_tag := soup.select_one("#productTitle"):
             title = clean_text(title_tag.text.strip())
+            data["title"] = title
+        data["url"] = product_url
 
         if "No customer reviews".lower() not in soup.text.lower():
             ratings = soup.select_one("#reviewsMedley .a-size-medium").get_text(strip=True)
         else:
             ratings = "N/A"
+        data["ratings"] = ratings
 
         size_chart = "N/A"
         if "size chart:" in soup.text.lower():
             size_chart = get_size_chart(soup)
+        data["size_chart"] = size_chart
 
         price = get_price(soup)
+        data['price'] = price
+
         images = get_image_urls(soup)
+        data["images"] = images
+
         description = "\n".join([desc.text.strip() for desc in soup.select("#productDescription span")])
         if not description:
-            description = soup.find('div', {'class': 'aplus-v2 desktop celwidget'}).text.strip()
+            try:
+                description = soup.find('div', {'class': 'aplus-v2 desktop celwidget'}).text.strip()
+            except Exception:
+                description = ""
+        data["description"] = description
+
         details = get_product_details(soup)
         sizes = get_sizes(soup)
+        data["sizes"] = sizes
         rating_by_features = get_rate_by_feature(soup)
+        data["rating_by_features"] = rating_by_features
         total_ratings = get_total_ratings(soup)
+        data["total_ratings"] = total_ratings
 
         table_data = get_technical_details(soup)
         category = soup.select_one("li:nth-of-type(1) .a-color-tertiary").get_text(strip=True)
+        data["category"] = category
+
         details.update(table_data)
+        data["product_info"] = details
 
         read_reviews_keywords = get_read_review_keyword(soup)
+        data["read_review_keywords"] = read_reviews_keywords
 
         color_variants = get_color_variant(soup)
+        data["color_variants"] = color_variants
         about_item = get_about_item(soup)
+        data["about_item"] = about_item
         warranty = get_warranty(soup)
+        data["warranty"] = warranty
         accessories = get_accessories(soup)
+        data["accessories"] = accessories
         product_overview = get_product_overview(soup)
+        data["overview"] = product_overview
 
         customer_reviews = get_customer_reviews(soup)
         if not customer_reviews:
             customer_reviews = get_customer_retry_reviews(soup)
+        data["customer_reviews"] = customer_reviews
+        data["SEARCH_KEYWORD"] = keyword
 
-        reviews = []
         if reviews_url := soup.select_one("#cr-pagination-footer-0 .a-text-bold"):
             reviews_url = "https://www.amazon.com" + reviews_url.get("href")
             reviews = get_reviews(reviews_url, number_of_reviews)
+        else:
+            reviews_url = "https://www.amazon.com" + soup.find('a', {'data-hook': "see-all-reviews-link-foot"})['href']
+            reviews = get_reviews(reviews_url, number_of_reviews)
+        data["reviews"] = reviews
 
-        data = {
-            "title": title,
-            "category": category,
-            "price": price,
-            "ratings": ratings,
-            "images": images,
-            "description": description,
-            "url": product_url,
-            "reviews": reviews,
-            "warranty": warranty,
-            "product_info": details,
-            "customer_reviews": customer_reviews,
-            "sizes": sizes,
-            "size_chart": size_chart,
-            "about_item": about_item,
-            "read_review_keywords": read_reviews_keywords,
-            "SEARCH_KEYWORD": keyword,
-            "color_variants": color_variants,
-            "rating_by_features": rating_by_features,
-            "accessories": accessories,
-            "overview": product_overview,
-            "total_ratings": total_ratings,
-        }
         return data
-
     except Exception as e:
         print(f"[+ Amazon +] Exception raised, {e}")
+        return data
 
 
 def scrap_amazon(keyword, number_of_products, number_of_reviews):
@@ -554,6 +568,4 @@ def scrap_amazon(keyword, number_of_products, number_of_reviews):
         print("[+ Amazon +] Unable to fetch product links")
 
     driver.close()
-
-    filtered_product = list(filter(lambda x: x is not None, product_information))
-    return filtered_product
+    return product_information
