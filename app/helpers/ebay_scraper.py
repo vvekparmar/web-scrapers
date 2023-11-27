@@ -312,6 +312,8 @@ def scrap_product_data(product_url, keyword, number_of_reviews):
 def scrap_ebay(keyword, number_of_products, number_of_reviews):
     """ This method is used to scrap ebay information """
 
+    global driver
+
     print(f"[+ Ebay +] Search Keyword: {keyword}")
     product_links = scrap_product_urls(keyword, number_of_products)
     print(f"[+ Ebay +] Product Link is found for {keyword}")
@@ -325,4 +327,5 @@ def scrap_ebay(keyword, number_of_products, number_of_reviews):
     else:
         print("[+ Ebay +] Unable to fetch product links")
 
+    driver.close()
     return data
