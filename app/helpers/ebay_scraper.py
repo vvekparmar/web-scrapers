@@ -1,11 +1,34 @@
 import requests
+import unicodedata
+
 from bs4 import BeautifulSoup as BS
 from fake_useragent import UserAgent
-
-from selenium import webdriver
 from selenium_stealth import stealth
+import undetected_chromedriver as uc
 from selenium.webdriver.common.by import By
-from selenium.webdriver.chrome.options import Options
+
+options = uc.ChromeOptions()
+options.add_argument('headless')
+options.add_argument('--no-sandbox')
+options.add_argument('--start-maximized')
+options.add_argument('--disable-infobars')
+options.add_argument('--disable-extensions')
+options.add_argument('--disable-popup-blocking')
+options.add_argument('--disable-dev-shm-usage')
+options.add_argument('--remote-debugging-port=9222')
+options.add_argument('--disable-blink-features=AutomationControlled')
+
+driver = uc.Chrome(use_subprocess=True, options=options)
+
+stealth(driver,
+        user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/83.0.4103.53 Safari/537.36',
+        languages=["en-US", "en"],
+        vendor="Google Inc.",
+        platform="Win32",
+        webgl_vendor="Intel Inc.",
+        renderer="Intel Iris OpenGL Engine",
+        fix_hairline=True,
+        )
 
 
 def get_random_user_agent():
@@ -15,26 +38,25 @@ def get_random_user_agent():
     return user_agent.random
 
 
-def get_chrome_driver(use_user_agent=False):
+def get_chrome_driver():
     """ This method is used to get the chrome driver """
 
-    options = Options()
-
-    if use_user_agent:
-        options.add_argument(f"user-agent={get_random_user_agent()}")
-
+    options = uc.ChromeOptions()
     options.add_argument('headless')
     options.add_argument('--no-sandbox')
+    options.add_argument('--start-maximized')
     options.add_argument('--disable-infobars')
+    options.add_argument('--disable-extensions')
     options.add_argument('--disable-dev-shm-usage')
+    options.add_argument('--disable-popup-blocking')
     options.add_argument('--remote-debugging-port=9222')
-    options.add_argument("start-maximized")
-    options.add_argument("headless")
+    options.add_argument(f"user-agent={get_random_user_agent()}")
+    options.add_argument('--disable-blink-features=AutomationControlled')
 
-    options.add_experimental_option("excludeSwitches", ["enable-automation"])
-    options.add_experimental_option('useAutomationExtension', False)
-    driver = webdriver.Chrome(options=options)
+    driver = uc.Chrome(use_subprocess=True, options=options)
+
     stealth(driver,
+            user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/83.0.4103.53 Safari/537.36',
             languages=["en-US", "en"],
             vendor="Google Inc.",
             platform="Win32",
@@ -42,6 +64,7 @@ def get_chrome_driver(use_user_agent=False):
             renderer="Intel Iris OpenGL Engine",
             fix_hairline=True,
             )
+
     return driver
 
 
@@ -50,6 +73,7 @@ def get_page_source_code(url):
 
     header = {"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/88.0.4324.152 Safari/537.3"}
     response = requests.get(url, headers=header)
+
     soup = BS(response.content, "html.parser")
     return soup
 
@@ -75,8 +99,13 @@ def get_item_description(product_id):
     soup = get_page_source_code(url)
     try:
         description = soup.select("td")[-1].text.strip()
-        return description
-    except AttributeError as e:
+        if description:
+            return description
+        else:
+            des = soup.find('div', {'id': 'ds_div'}).text.strip()
+            return des
+
+    except Exception as e:
         print(f"[+ Ebay +] Exception raised, {e}")
         return "N/A"
 
@@ -88,13 +117,23 @@ def get_product_images(soup):
     if images_tag := soup.select(".ux-image-filmstrip-carousel img"):
         image_urls = {image.get("src").replace("l64.jpg", "l1600.jpg") for image in images_tag}
         return list(image_urls)
+    else:
+        buttons = soup.find_all('button', {'class': 'ux-image-grid-item'})
+
+        for but in buttons:
+            try:
+                image_urls.append(but.img.get("src").replace("l64.jpg", "l1600.jpg"))
+            except:
+                image_urls.append(but.img.get("data-src").replace("l64.jpg", "l1600.jpg"))
+
     return image_urls
 
 
 def get_seller_username(soup):
     """ This method is used to get the seller username """
 
-    if contact := soup.select_one(".d-stores-info-categories__container__action .d-stores-info-categories__container__action__contact.fake-btn.fake-btn--secondary"):
+    if contact := soup.select_one(
+            ".d-stores-info-categories__container__action .d-stores-info-categories__container__action__contact.fake-btn.fake-btn--secondary"):
         return contact.get("href").split("&")[2].split("=")[-1]
 
 
@@ -161,25 +200,34 @@ def get_size_variants(soup):
     if sizes_tag := soup.select('[selectboxlabel*="Size"] option'):
         sizes = [size.text.strip()
                  for size in sizes_tag if "Select" not in size.text.strip()]
+        sizes = [s.replace("\xa0", "") for s in sizes]
         return sizes
     return []
 
 
-def get_reviews(seller_username, product_id, number_of_reviews):
+def get_reviews(soup, seller_username, product_id, number_of_reviews):
     """ This method is used to get the reviews the product """
 
-    reviews = []
+    global driver
+    feedback = soup.find('div', {'class': "fdbk-detail-list"})
+    if not feedback:
+        return []
+    comments = feedback.find_all('div', {'class': 'fdbk-container__details__comment'})
+    comments = [c.text.strip() for c in comments]
+
+    if number_of_reviews <= len(comments):
+        return comments[:number_of_reviews]
+
+    reviews = comments.copy()
     page_num = 1
     reviews_fetched = False
-
-    driver = get_chrome_driver()
 
     while not reviews_fetched:
         url = f"https://www.ebay.com/fdbk/feedback_profile/{seller_username}?filter=feedback_page%3ARECEIVED_AS_SELLER&sort=TIME&page_id={page_num}&limit=200&q={product_id}"
         driver.get(url)
         if driver.title == "Security Measure":
             driver.quit()
-            driver = get_chrome_driver(use_user_agent=True)
+            driver = get_chrome_driver()
             print("[+ Ebay +] Getting chrome driver for scraping reviews...")
             continue
         else:
@@ -187,13 +235,15 @@ def get_reviews(seller_username, product_id, number_of_reviews):
                 return []
 
             feedback_tag = driver.find_elements(By.CSS_SELECTOR, ".card__text")
-            for review in feedback_tag:
+            for review in feedback_tag[3:]:
                 if len(reviews) >= number_of_reviews:
                     reviews_fetched = True
                     break
                 else:
                     reviews.append(review.text.strip())
-            page_num = 1
+            if not feedback_tag:
+                reviews_fetched = True
+            page_num += 1
 
     return reviews[:number_of_reviews]
 
@@ -208,6 +258,16 @@ def scrap_product_urls(keyword, number_of_products):
     if links_tag := soup.select(".clearfix > .s-item__pl-on-bottom .s-item__link"):
         return [url.get("href") for url in links_tag][:number_of_products]
     return None
+
+
+def clean_text(text):
+    """ This method is used to clean text """
+
+    cleaned_text = ''.join(c for c in text if unicodedata.category(c)[0] != 'C')
+    cleaned_text = cleaned_text.replace('\n', ' ')
+    cleaned_text = cleaned_text.replace(":", "") if cleaned_text.endswith(":") else cleaned_text
+    cleaned_text = cleaned_text.replace("\xa0", "")
+    return cleaned_text.strip()
 
 
 def scrap_product_data(product_url, keyword, number_of_reviews):
@@ -228,7 +288,8 @@ def scrap_product_data(product_url, keyword, number_of_reviews):
     items_specific_details = get_item_specification(soup)
     product_id = product_url.split("?")[0].split("/")[-1]
     product_description = get_item_description(product_id)
-    reviews = get_reviews(seller_username, product_id, number_of_reviews)
+    product_description = clean_text(product_description)
+    reviews = get_reviews(soup, seller_username, product_id, number_of_reviews)
 
     data = {
         "product_id": product_id,

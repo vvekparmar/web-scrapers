@@ -171,6 +171,7 @@ def clean_text(text):
     cleaned_text = ''.join(c for c in text if unicodedata.category(c)[0] != 'C')
     cleaned_text = cleaned_text.replace('\n', ' ')
     cleaned_text = cleaned_text.replace(":", "") if cleaned_text.endswith(":") else cleaned_text
+    cleaned_text = cleaned_text.replace("\xa0", "")
     return cleaned_text.strip()
 
 
@@ -213,8 +214,8 @@ def get_sizes(soup):
         size_options = sizes_list_tag.select("option")
         size_options = [option.text.strip() for option in size_options]
         return size_options[1:]
-    options = soup.find_all('li', attrs={'class': 'swatch-list-item-text'})
-    for p in options:
+    s = soup.find_all('li', attrs={'class': 'swatch-list-item-text'})
+    for p in s:
         sizes.append(p.find('span', {"class": "a-size-base swatch-title-text-display swatch-title-text"}).text.strip())
     sizes = [s for s in sizes if s]
     return sizes
@@ -416,7 +417,6 @@ def get_price(soup):
                 ".a-price.aok-align-center.reinventPricePriceToPayMargin.priceToPay").find('span', {
                 "aria-hidden": "true"}).text.strip()
 
-
     except AttributeError:
         price = soup.select(".a-price.a-text-price.a-size-medium.apexPriceToPay .a-offscreen")
         price = [p.text.strip() for p in price]
@@ -495,6 +495,7 @@ def get_product_data(product_url, keyword, number_of_reviews):
         if not description:
             try:
                 description = soup.find('div', {'class': 'aplus-v2 desktop celwidget'}).text.strip()
+                description = clean_text(description)
             except Exception:
                 description = ""
         data["description"] = description
