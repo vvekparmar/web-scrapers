@@ -3,33 +3,9 @@ import unicodedata
 from bs4 import BeautifulSoup as bs
 import undetected_chromedriver as uc
 
-from selenium import webdriver
 from selenium_stealth import stealth
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.options import Options
-
-options = uc.ChromeOptions()
-options.add_argument('headless')
-options.add_argument('--no-sandbox')
-options.add_argument('--start-maximized')
-options.add_argument('--disable-infobars')
-options.add_argument('--disable-extensions')
-options.add_argument('--disable-popup-blocking')
-options.add_argument('--disable-dev-shm-usage')
-options.add_argument('--remote-debugging-port=9222')
-options.add_argument('--disable-blink-features=AutomationControlled')
-
-driver = uc.Chrome(use_subprocess=True, options=options)
-
-stealth(driver,
-        user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/83.0.4103.53 Safari/537.36',
-        languages=["en-US", "en"],
-        vendor="Google Inc.",
-        platform="Win32",
-        webgl_vendor="Intel Inc.",
-        renderer="Intel Iris OpenGL Engine",
-        fix_hairline=True,
-        )
 
 
 def get_chrome_driver():
@@ -46,10 +22,7 @@ def get_chrome_driver():
     options.add_argument('--remote-debugging-port=9222')
     options.add_argument('--disable-blink-features=AutomationControlled')
 
-    options.add_experimental_option("excludeSwitches", ["enable-automation"])
-    options.add_experimental_option('useAutomationExtension', False)
-
-    driver = webdriver.Chrome(options=options)
+    driver = uc.Chrome(use_subprocess=True, options=options)
 
     stealth(driver,
             user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/83.0.4103.53 Safari/537.36',
@@ -64,12 +37,8 @@ def get_chrome_driver():
     return driver
 
 
-def get_page_source_code(url):
-    global driver
+def get_page_source_code(driver, url):
     """ This method is used to get the page source code from the url """
-
-    if not driver:
-        driver = get_chrome_driver()
 
     driver.get(url)
 
@@ -89,7 +58,7 @@ def remove_unicode_chars(input_string):
     return ''.join(c for c in input_string if unicodedata.category(c)[0] != 'C')
 
 
-def scrap_product_listing_url(keyword, number_of_products=5):
+def scrap_product_listing_url(driver, keyword, number_of_products=5):
     """ This method is used to scrap the product list from the url """
 
     keyword = "+".join(keyword.split(" "))
@@ -102,7 +71,7 @@ def scrap_product_listing_url(keyword, number_of_products=5):
         url = f"https://www.amazon.com/s?k={keyword}&page={page_num}"
         print(f"[+ Amazon +] Scrapping {url} page {page_num}")
 
-        soup = get_page_source_code(url)
+        soup = get_page_source_code(driver, url)
         if soup:
             asin_list_tag = soup.find_all('div', attrs={
                 'class': 'sg-col-4-of-24 sg-col-4-of-12 s-result-item s-asin sg-col-4-of-16 sg-col s-widget-spacing-small sg-col-4-of-20'})
@@ -121,7 +90,7 @@ def scrap_product_listing_url(keyword, number_of_products=5):
     return product_links
 
 
-def get_reviews(reviews_url, number_of_reviews=5):
+def get_reviews(driver, reviews_url, number_of_reviews=5):
     """ This method is used to get the product reviews from the review url """
 
     page_num = 1
@@ -130,7 +99,7 @@ def get_reviews(reviews_url, number_of_reviews=5):
     while True:
         if len(reviews) >= number_of_reviews:
             break
-        soup = get_page_source_code(reviews_url + "&pageNumber=" + str(page_num))
+        soup = get_page_source_code(driver, reviews_url + "&pageNumber=" + str(page_num))
         reviews_list_tag = soup.select("div.a-section.review.aok-relative")
 
         for review in reviews_list_tag:
@@ -238,9 +207,8 @@ def get_technical_details(soup):
     return table_data
 
 
-def get_read_review_keyword(soup):
+def get_read_review_keyword(driver, soup):
     """ This method is used to read the review keywords """
-    global driver
 
     if read_review_tag := soup.select_one(".cr-lighthouse-terms"):
         tags = [tag.text.strip() for tag in read_review_tag.select(".a-declarative")]
@@ -452,10 +420,9 @@ def extract_number_from_string(input_string):
     return 0
 
 
-def get_product_data(product_url, keyword, number_of_reviews):
+def get_product_data(driver, product_url, keyword, number_of_reviews):
     """ This method is used to get the product data """
 
-    global driver
     data = {}
 
     print(f"[+ Amazon +] Scraping data from {product_url}")
@@ -515,7 +482,7 @@ def get_product_data(product_url, keyword, number_of_reviews):
         details.update(table_data)
         data["product_info"] = details
 
-        read_reviews_keywords = get_read_review_keyword(soup)
+        read_reviews_keywords = get_read_review_keyword(driver, soup)
         data["read_review_keywords"] = read_reviews_keywords
 
         color_variants = get_color_variant(soup)
@@ -537,10 +504,10 @@ def get_product_data(product_url, keyword, number_of_reviews):
 
         if reviews_url := soup.select_one("#cr-pagination-footer-0 .a-text-bold"):
             reviews_url = "https://www.amazon.com" + reviews_url.get("href")
-            reviews = get_reviews(reviews_url, number_of_reviews)
+            reviews = get_reviews(driver, reviews_url, number_of_reviews)
         else:
             reviews_url = "https://www.amazon.com" + soup.find('a', {'data-hook': "see-all-reviews-link-foot"})['href']
-            reviews = get_reviews(reviews_url, number_of_reviews)
+            reviews = get_reviews(driver, reviews_url, number_of_reviews)
         data["reviews"] = reviews
 
         return data
@@ -552,10 +519,11 @@ def get_product_data(product_url, keyword, number_of_reviews):
 def scrap_amazon(keyword, number_of_products, number_of_reviews):
     """ This is the main method of the scrapper """
 
-    global driver
-
     print(f"[+ Amazon +] Search Keyword: {keyword}")
-    product_links = scrap_product_listing_url(keyword, number_of_products)
+
+    driver = get_chrome_driver()
+
+    product_links = scrap_product_listing_url(driver, keyword, number_of_products)
 
     print(f"[+ Amazon +] Product Link is found for {keyword}")
     print(f"[+ Amazon +] Links: {product_links}")
@@ -563,7 +531,7 @@ def scrap_amazon(keyword, number_of_products, number_of_reviews):
     product_information = []
     if product_links:
         for product_url in product_links:
-            result = get_product_data(product_url, keyword, number_of_reviews)
+            result = get_product_data(driver, product_url, keyword, number_of_reviews)
             product_information.append(result)
     else:
         print("[+ Amazon +] Unable to fetch product links")
