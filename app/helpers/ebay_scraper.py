@@ -7,29 +7,6 @@ from selenium_stealth import stealth
 import undetected_chromedriver as uc
 from selenium.webdriver.common.by import By
 
-options = uc.ChromeOptions()
-options.add_argument('headless')
-options.add_argument('--no-sandbox')
-options.add_argument('--start-maximized')
-options.add_argument('--disable-infobars')
-options.add_argument('--disable-extensions')
-options.add_argument('--disable-popup-blocking')
-options.add_argument('--disable-dev-shm-usage')
-options.add_argument('--remote-debugging-port=9222')
-options.add_argument('--disable-blink-features=AutomationControlled')
-
-driver = uc.Chrome(use_subprocess=True, options=options)
-
-stealth(driver,
-        user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/83.0.4103.53 Safari/537.36',
-        languages=["en-US", "en"],
-        vendor="Google Inc.",
-        platform="Win32",
-        webgl_vendor="Intel Inc.",
-        renderer="Intel Iris OpenGL Engine",
-        fix_hairline=True,
-        )
-
 
 def get_random_user_agent():
     """ This method is used to get the random user agent """
@@ -205,10 +182,9 @@ def get_size_variants(soup):
     return []
 
 
-def get_reviews(soup, seller_username, product_id, number_of_reviews):
+def get_reviews(driver, soup, seller_username, product_id, number_of_reviews):
     """ This method is used to get the reviews the product """
 
-    global driver
     feedback = soup.find('div', {'class': "fdbk-detail-list"})
     if not feedback:
         return []
@@ -270,7 +246,7 @@ def clean_text(text):
     return cleaned_text.strip()
 
 
-def scrap_product_data(product_url, keyword, number_of_reviews):
+def scrap_product_data(driver, product_url, keyword, number_of_reviews):
     """ This method is used to scrap the product data """
 
     print(f"[+ Ebay +] Scraping data from: {product_url}")
@@ -289,7 +265,7 @@ def scrap_product_data(product_url, keyword, number_of_reviews):
     product_id = product_url.split("?")[0].split("/")[-1]
     product_description = get_item_description(product_id)
     product_description = clean_text(product_description)
-    reviews = get_reviews(soup, seller_username, product_id, number_of_reviews)
+    reviews = get_reviews(driver, soup, seller_username, product_id, number_of_reviews)
 
     data = {
         "product_id": product_id,
@@ -312,9 +288,10 @@ def scrap_product_data(product_url, keyword, number_of_reviews):
 def scrap_ebay(keyword, number_of_products, number_of_reviews):
     """ This method is used to scrap ebay information """
 
-    global driver
-
     print(f"[+ Ebay +] Search Keyword: {keyword}")
+
+    driver = get_chrome_driver()
+
     product_links = scrap_product_urls(keyword, number_of_products)
     print(f"[+ Ebay +] Product Link is found for {keyword}")
     print(f"[+ Ebay +] Links: {product_links}")
@@ -322,7 +299,7 @@ def scrap_ebay(keyword, number_of_products, number_of_reviews):
     data = []
     if product_links:
         for link in product_links:
-            product_details = scrap_product_data(link, keyword, number_of_reviews)
+            product_details = scrap_product_data(driver, link, keyword, number_of_reviews)
             data.append(product_details)
     else:
         print("[+ Ebay +] Unable to fetch product links")
