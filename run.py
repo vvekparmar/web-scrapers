@@ -4,9 +4,11 @@ import uvicorn
 from fastapi import FastAPI
 from pydantic import BaseModel
 
-sys.path.append('app/app/helpers')
-from ebay_scraper import scrap_ebay
-from amazon_scraper import scrap_amazon
+# sys.path.append('app/app/helpers')
+from app.helpers.ebay_scraper import scrap_ebay
+from app.helpers.amazon_scraper import scrap_amazon
+from app.helpers.walmart_scraper import scrap_walmart
+
 
 fastapi_app = FastAPI()
 
@@ -30,6 +32,15 @@ def amazon_scrapper(data: RequestBody):
 def ebay_scrapper(data: RequestBody):
     try:
         product_info = scrap_ebay(data.keyword, data.number_of_products, data.number_of_reviews)
+        return product_info
+    except Exception as error:
+        return {"error": error}
+
+
+@fastapi_app.post('/walmart-scraper')
+def ebay_scrapper(data: RequestBody):
+    try:
+        product_info = scrap_walmart(data.keyword, data.number_of_products, data.number_of_reviews)
         return product_info
     except Exception as error:
         return {"error": error}

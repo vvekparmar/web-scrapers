@@ -304,5 +304,5 @@ def scrap_ebay(keyword, number_of_products, number_of_reviews):
     else:
         print("[+ Ebay +] Unable to fetch product links")
 
-    driver.close()
+    driver.quit()
     return data

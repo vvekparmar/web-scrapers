@@ -1,38 +1,31 @@
 import time
-from app import config
-from fake_useragent import UserAgent
-from selenium_stealth import stealth
+import undetected_chromedriver as uc
+from bs4 import BeautifulSoup as bs
 
-from selenium import webdriver
+from selenium_stealth import stealth
 from selenium.webdriver.common.by import By
-from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.support.wait import WebDriverWait
-from selenium.common.exceptions import NoSuchElementException
 from selenium.webdriver.support import expected_conditions as EC
 
 
-def get_random_user_agent():
-    """ This method is used to get the random user agent """
-
-    user_agent = UserAgent()
-    return user_agent.random
-
-
-def get_chrome_driver(use_user_agent=False):
+def get_chrome_driver():
     """ This method is used to get the chrome driver """
 
-    options = Options()
+    options = uc.ChromeOptions()
+    options.add_argument('headless')
+    options.add_argument('--no-sandbox')
+    options.add_argument('--start-maximized')
+    options.add_argument('--disable-infobars')
+    options.add_argument('--disable-extensions')
+    options.add_argument('--disable-popup-blocking')
+    options.add_argument('--disable-dev-shm-usage')
+    options.add_argument('--remote-debugging-port=9222')
+    options.add_argument('--disable-blink-features=AutomationControlled')
 
-    if use_user_agent:
-        options.add_argument(f"user-agent={get_random_user_agent()}")
+    driver = uc.Chrome(use_subprocess=True, options=options)
 
-    options.add_argument("start-maximized")
-    options.add_argument("headless")
-
-    options.add_experimental_option("excludeSwitches", ["enable-automation"])
-    options.add_experimental_option('useAutomationExtension', False)
-    driver = webdriver.Chrome(options=options)
     stealth(driver,
+            user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/83.0.4103.53 Safari/537.36',
             languages=["en-US", "en"],
             vendor="Google Inc.",
             platform="Win32",
@@ -40,17 +33,39 @@ def get_chrome_driver(use_user_agent=False):
             renderer="Intel Iris OpenGL Engine",
             fix_hairline=True,
             )
+
     return driver
 
 
-def get_product_listings(keyword):
+def get_rating_details(driver):
+    try:
+        s = bs(driver.page_source, features="lxml")
+        rev = s.find('div', {'id': 'item-review-section'})
+        if rev:
+            total_reviews = rev.select_one('.pt1 a span.ml1.f7.dark-gray.underline').text.strip()[1:-1]
+
+            total_rating = rev.select_one('.w-50 div .f-headline.b').text.strip() + " out of 5"
+
+            rates = rev.select('.list.pl0.w-100 li')
+            ratings = {}
+            for rate in rates:
+                k = rate.select_one('.w5').text.strip()
+                v = rate.select_one('.w3').text.strip()
+                ratings[k] = v
+
+            rating_based_on_star = ratings
+            return total_reviews, total_rating, rating_based_on_star
+    except:
+        return None, None, None
+
+
+def get_product_listings(driver, keyword, number_of_products):
     """ This method is used to get the product lists """
 
     page_num = 1
     product_urls = []
     done_searching = False
 
-    driver = get_chrome_driver(use_user_agent=True)
     keyword = "+".join(keyword.split(" "))
 
     while not done_searching:
@@ -59,11 +74,11 @@ def get_product_listings(keyword):
 
         try:
             if link_tags := WebDriverWait(driver, 10).until(
-                EC.presence_of_all_elements_located(
-                    (By.CSS_SELECTOR, ".ph1 .hide-sibling-opacity"))):
+                    EC.presence_of_all_elements_located(
+                        (By.CSS_SELECTOR, ".ph1 .hide-sibling-opacity"))):
 
                 for elem in link_tags:
-                    if len(product_urls) >= config.NUMBER_OF_PRODUCTS:
+                    if len(product_urls) >= number_of_products:
                         done_searching = True
                         break
                     else:
@@ -73,7 +88,6 @@ def get_product_listings(keyword):
         except Exception as e:
             print(f"[+ Walmart +] Exception raised, {e}")
 
-    driver.quit()
     return product_urls
 
 
@@ -83,27 +97,32 @@ def get_images(driver):
     image_tag = WebDriverWait(driver, 10).until(EC.presence_of_all_elements_located(
         (By.CSS_SELECTOR, "[data-testid='media-thumbnail'] img")))
     image_urls = [img.get_attribute('src').split(".jpeg")[
-        0] + ".jpeg?odnHeight=2000&odnWidth=2000&odnBg=FFFFFF" for img in image_tag]
+                      0] + ".jpeg?odnHeight=2000&odnWidth=2000&odnBg=FFFFFF" for img in image_tag]
 
     return image_urls
 
 
 def get_ratings(driver):
     """ This method is used to get the ratings of the product """
-
-    if rating_tag := driver.find_element(By.CSS_SELECTOR, "span.rating-number"):
-        return rating_tag.text.strip().replace("(", "").replace(")", "")
+    try:
+        if rating_tag := driver.find_element(By.CSS_SELECTOR, "span.rating-number"):
+            return rating_tag.text.strip().replace("(", "").replace(")", "")
+    except:
+        return None
 
 
 def get_specifications(driver):
     """ This method is used to get the specifications of the product """
 
     specifications = {}
-    if specs_tag := driver.find_elements(By.CSS_SELECTOR, ".ph3.pb4.pt1 .nt1"):
-        for spec in specs_tag:
+
+    if specs_tag := driver.find_element(By.CSS_SELECTOR, ".ph3.pb4.pt1 .nt1").find_elements(By.TAG_NAME, 'div'):
+        for spec in specs_tag[::2]:
             key = spec.find_element(By.CSS_SELECTOR, "h3").text.strip()
             value = spec.find_element(By.CSS_SELECTOR, ".mv0.lh-copy.f6.mid-gray").text.strip()
+
             specifications[key] = value
+
     return specifications
 
 
@@ -117,6 +136,18 @@ def get_highlights(driver):
             key = data[0].text.strip()
             value = data[1].text.strip()
             highlights[key] = value
+    else:
+        highlights = {}
+        if highlights_tag := driver.find_elements(By.CSS_SELECTOR, ".pv2 .flex.w-100.mv2 div.w-50"):
+
+            for highlight1 in highlights_tag:
+                key = highlight1.find_elements(By.CSS_SELECTOR, ".b.mv1")
+                value = highlight1.find_elements(By.CSS_SELECTOR, ".ml3.mv1")
+                for data in zip(key, value):
+                    key = data[0].text.strip()
+                    value = data[1].text.strip()
+                    highlights[key] = value
+
     return highlights
 
 
@@ -124,15 +155,25 @@ def get_frequent_mentions(driver):
     """ This method is used to get the frequent mentions of the product """
 
     try:
-        if see_more_btn := driver.find_element(By.CSS_SELECTOR, "#item-review-section .ph0"):
-            see_more_btn.click()
+        element = driver.find_element(By.CSS_SELECTOR, ".overflow-auto")
 
-    except NoSuchElementException:
-        print(f"[+ Walmart +] Exception raised, NoSuchElementException")
+        driver.execute_script("arguments[0].scrollIntoView(true);", element)
+        time.sleep(2)
+        driver.find_element(By.CSS_SELECTOR, "#item-review-section button.ph0").click()
+
+    except Exception as e:
+        try:
+            driver.execute_script("window.scrollTo(1,4500 );")
+            driver.find_element(By.CSS_SELECTOR, "#item-review-section button.ph0").click()
+        except:
+            pass
+
+        pass
 
     mentions = []
-    if mentions_tag := driver.find_elements(By.CSS_SELECTOR, ".w_3hhZ"):
-        return [mention.text.strip().replace("\n", "") for mention in mentions_tag]
+
+    if mentions_tag := driver.find_elements(By.CSS_SELECTOR, ".overflow-auto .pr1"):
+        return [mention.text.strip() for mention in mentions_tag]
 
     return mentions
 
@@ -148,104 +189,178 @@ def get_product_description(driver):
 def get_color_variants(driver):
     """ This method is used to get the color variants of the product """
 
-    if color_variants_tag := driver.find_elements(By.CSS_SELECTOR, '[data-testid="variant-group-0"] button [data-testid="variant-tile"] span.w_iUH7'):
-        return [color.text.split(", ")[-2] for color in color_variants_tag if "Out of stock" not in color.text.strip()]
+    for i in range(0, 3):
+        a = driver.find_elements(By.CSS_SELECTOR, f'[data-testid="variant-group-{i}"]')
+        if a:
+            txt = a[0].find_element(By.CLASS_NAME, "mid-gray.mb2").text.strip()
+            if 'Color' in txt:
+                color_variants_tag = a[0].find_elements(By.CSS_SELECTOR,
+                                                        'button [data-testid="variant-tile"] span.w_iUH7')
+                return [color.text.lstrip("selected,").strip() for color in color_variants_tag if
+                        "Out of stock" not in color.text.strip()]
+
     return []
 
 
 def get_sizes(driver):
     """ This method is used to get the sizes of the product """
 
-    if sizes_tag := driver.find_elements(By.CSS_SELECTOR, '[data-testid="variant-group-1"] [data-testid="variant-tile"] [aria-hidden="true"]'):
-        return [size.text.strip() for size in sizes_tag]
+    for i in range(0, 3):
+        a = driver.find_elements(By.CSS_SELECTOR, f'[data-testid="variant-group-{i}"]')
+        if a:
+            txt = a[0].find_element(By.CLASS_NAME, "mid-gray.mb2").text.strip()
+            if 'size' in txt.lower() or "edition" in txt.lower() or "capacity" in txt.lower():
+                color_variants_tag = a[0].find_elements(By.CSS_SELECTOR,
+                                                        'button [data-testid="variant-tile"] span.w_iUH7')
+                return [color.text.lstrip("selected,").strip() for color in color_variants_tag]
+
     return []
 
 
-def get_reviews(driver):
+def get_reviews(driver, number_of_reviews):
     """ This method is used to get the reviews of the product """
 
     reviews = []
     page_num = 1
     reviews_fetched = False
 
+    rev = driver.find_element(By.CSS_SELECTOR, "#item-review-section")
+    list_rev = rev.find_elements(By.CSS_SELECTOR, '.overflow-hidden.nr3.nr1-m li')
+    for l_rev in list_rev:
+        try:
+            l_rev.find_element(By.TAG_NAME, 'button').click()
+        except:
+            pass
+        time.sleep(1)
+
+    for l in list_rev:
+
+        try:
+            review_title = l.find_element(By.CSS_SELECTOR, "h3.w_kV33").text
+        except:
+            review_title = None
+        rating = l.find_element(By.CSS_SELECTOR, "span.w_iUH7").text
+        try:
+            txt = l.find_element(By.CSS_SELECTOR, "span.tl-m.mb3.db-m").text
+        except:
+            txt = None
+        reviews.append({'review_title': review_title, "review_text": txt, "rating": rating})
+        if len(reviews) >= number_of_reviews:
+            reviews_fetched = True
+            return reviews
+    try:
+        review_link = rev.find_element(By.CSS_SELECTOR, '[link-identifier="seeAllReviews"]').get_attribute('href')
+    except:
+        return reviews
+    reviews_data = []
     while not reviews_fetched:
-        url = f"https://www.walmart.com/reviews/product/363405465?page={page_num}"
+        url = f"{review_link}?page={page_num}"
         driver.get(url)
-        if reviews_tag := driver.find_elements(By.CSS_SELECTOR, ".db-m"):
-            for elem in reviews_tag:
-                if len(reviews) >= config.NUMBER_REVIEWS:
-                    reviews_fetched = True
-                    break
-                else:
-                    reviews.append(elem.text.strip())
-            page_num += 1
-        else:
+        review_list = driver.find_elements(By.CSS_SELECTOR, "li.dib.w-100.mb3")
+        if not review_list:
             break
+        for rl in review_list:
+            try:
+                rl.find_element(By.CSS_SELECTOR, 'button.f6.ml1').click()
+            except:
+                pass
+            try:
+                review_title = rl.find_element(By.CSS_SELECTOR, "h3.w_kV33").text
+            except:
+                review_title = None
+            rating = rl.find_element(By.CSS_SELECTOR, "span.w_iUH7").text
+            try:
+                txt = rl.find_element(By.CSS_SELECTOR, "span.tl-m.mb3.db-m").text
+            except:
+                txt = None
+            reviews_data.append({'review_title': review_title, "review_text": txt, "rating": rating})
+
+        if len(reviews_data) >= number_of_reviews:
+            reviews_fetched = True
+            break
+
+        page_num += 1
+    if reviews_data:
+        reviews = reviews_data
 
     return reviews
 
 
-def scrap_product_data(product_url):
+def scrap_product_data(driver, product_url, keyword, number_of_reviews):
     """ This method is used to scrap the product data """
 
     print(f"[+ Walmart +] Scraping data from: {product_url}")
+    data = {}
 
-    driver = get_chrome_driver()
     driver.get(product_url)
+    dr_link = driver.current_url
+
+    while "blocked" in dr_link:
+        driver.quit()
+        driver = get_chrome_driver()
+        driver.get(product_url)
+        time.sleep(2)
+        dr_link = driver.current_url
 
     try:
         title = WebDriverWait(driver, 10).until(EC.presence_of_element_located(
             (By.CSS_SELECTOR, "#main-title"))).text.strip()
+        data['title'] = title
         price = driver.find_element(
             By.CSS_SELECTOR, "[itemprop='price']").text.replace("Now ", "").strip()
-
+        data['price'] = price
+        data['SEARCH_KEYWORD'] = keyword
+        data['url'] = product_url
         description = get_product_description(driver)
+        data['description'] = description
         image_urls = get_images(driver)
-        ratings = get_ratings(driver)
-        sizes = get_sizes(driver)
-        color_variants = get_color_variants(driver)
-        specifications = get_specifications(driver)
-        quick_highlights = get_highlights(driver)
-        mentions = get_frequent_mentions(driver)
-        reviews = get_reviews(driver)
+        data['images'] = image_urls
 
-        data = {
-            "title": title,
-            "description": description,
-            "url": product_url,
-            "price": price,
-            "color_variants": color_variants,
-            "sizes": sizes,
-            "images": image_urls,
-            "ratings": ratings,
-            "frequent_mentions": mentions,
-            "specifications": specifications,
-            "quick_highlights": quick_highlights,
-            "reviews": reviews,
-        }
-        driver.quit()
+        ratings = get_ratings(driver)
+        data['ratings'] = ratings
+        sizes = get_sizes(driver)
+        data['sizes'] = sizes
+        color_variants = get_color_variants(driver)
+        data['color_variants'] = color_variants
+        specifications = get_specifications(driver)
+        data['specifications'] = specifications
+        quick_highlights = get_highlights(driver)
+        data['quick_highlights'] = quick_highlights
+        mentions = get_frequent_mentions(driver)
+        data["frequent_mentions"] = mentions
+        total_reviews, total_rating, rating_based_on_star = get_rating_details(driver)
+        data['total_reviews'] = total_reviews
+        data['total_rating'] = total_rating
+        data['customer_reviews'] = rating_based_on_star
+        reviews = get_reviews(driver, number_of_reviews)
+        data['reviews'] = reviews
+
         return data
+
     except Exception as e:
         print(f"[+ Walmart +] Exception raised, {e}")
+        return data
 
 
-def scrap_walmart():
-    """ This method is used to scrap walmart information """
+def scrap_walmart(keyword, number_of_products, number_of_reviews):
+    """ This is the main method of the scrapper """
 
-    print(f"[+ Walmart +] Search Keyword: {config.SEARCH_KEYWORD}")
-    product_links = get_product_listings(config.SEARCH_KEYWORD)
-    print(f"[+ Walmart +] Product Link is found for {config.SEARCH_KEYWORD}")
+    print(f"[+ Walmart +] Search Keyword: {keyword}")
+
+    driver = get_chrome_driver()
+
+    product_links = get_product_listings(driver, keyword, number_of_products)
+
+    print(f"[+ Walmart +] Product Link is found for {keyword}")
     print(f"[+ Walmart +] Links: {product_links}")
 
-    data = []
+    product_information = []
     if product_links:
-        for link in product_links:
-            product_details = scrap_product_data(link)
-            data.append(product_details)
+        for product_url in product_links:
+            result = scrap_product_data(driver, product_url, keyword, number_of_reviews)
+            product_information.append(result)
     else:
         print("[+ Walmart +] Unable to fetch product links")
 
-    return data
-
-
-scrap_walmart()
+    driver.quit()
+    return product_information

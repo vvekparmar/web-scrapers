@@ -536,5 +536,5 @@ def scrap_amazon(keyword, number_of_products, number_of_reviews):
     else:
         print("[+ Amazon +] Unable to fetch product links")
 
-    driver.close()
+    driver.quit()
     return product_information
