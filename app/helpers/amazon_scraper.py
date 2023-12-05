@@ -73,9 +73,9 @@ def scrap_product_listing_url(driver, keyword, number_of_products=5):
 
         soup = get_page_source_code(driver, url)
         if soup:
-            asin_list_tag = soup.find_all('div', attrs={
-                'class': 'sg-col-4-of-24 sg-col-4-of-12 s-result-item s-asin sg-col-4-of-16 sg-col s-widget-spacing-small sg-col-4-of-20'})
-
+            asin_list_tag = soup.find_all('div',attrs={'class': 'sg-col-4-of-24 sg-col-4-of-12 s-result-item s-asin sg-col-4-of-16 sg-col s-widget-spacing-small sg-col-4-of-20'})
+            if not asin_list_tag:
+                asin_list_tag = soup.find_all('div',attrs={'class': 's-result-item'})
             for data_asin in asin_list_tag:
                 if asin := data_asin['data-asin']:
 

@@ -4,10 +4,10 @@ import uvicorn
 from fastapi import FastAPI
 from pydantic import BaseModel
 
-# sys.path.append('app/app/helpers')
-from app.helpers.ebay_scraper import scrap_ebay
-from app.helpers.amazon_scraper import scrap_amazon
-from app.helpers.walmart_scraper import scrap_walmart
+sys.path.append('app/app/helpers')
+from ebay_scraper import scrap_ebay
+from amazon_scraper import scrap_amazon
+from walmart_scraper import scrap_walmart
 
 
 fastapi_app = FastAPI()
@@ -51,3 +51,4 @@ if __name__ == "__main__":
         uvicorn.run("run:fastapi_app", host="0.0.0.0", workers=1)
     except Exception as e:
         print(f"Server exit with error: {e}")
+
