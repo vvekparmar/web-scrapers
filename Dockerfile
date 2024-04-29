@@ -1,29 +1,28 @@
-FROM --platform=linux/amd64 python:3.10-slim
+FROM python:3.10-slim
 
-RUN apt-get -y update
+RUN apt-get update && apt-get install -y \
+  wget \
+  unzip \
+  curl \
+  gnupg \
+  && rm -rf /var/lib/apt/lists/*
 
-RUN apt-get -y upgrade
+# Install Firefox
+RUN apt-get update && apt-get install -y firefox-esr
 
-RUN apt-get install -y gnupg2 wget curl
+# Install GeckoDriver
+RUN wget -O /tmp/geckodriver.tar.gz https://github.com/mozilla/geckodriver/releases/download/v0.30.0/geckodriver-v0.30.0-linux64.tar.gz
+RUN tar -xzf /tmp/geckodriver.tar.gz -C /usr/local/bin/
+RUN pip install --no-cache-dir --upgrade pip
 
-RUN wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | apt-key add -
+WORKDIR /app
 
-RUN sh -c 'echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" >> /etc/apt/sources.list.d/google-chrome.list'
+COPY ./requirements.txt /app/requirements.txt
 
-RUN apt-get -y update
+RUN pip3 install --no-cache-dir -r requirements.txt
 
-RUN apt-get install -y google-chrome-stable
-
-RUN apt-get install -yqq unzip
+COPY . .
 
 ENV DISPLAY=:99
-
-COPY requirements.txt .
-
-RUN pip install -r requirements.txt
-
-COPY run.py run.py
-
-COPY . app
 
 CMD ["python3", "run.py"]

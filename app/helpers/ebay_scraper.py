@@ -7,6 +7,26 @@ from selenium_stealth import stealth
 import undetected_chromedriver as uc
 from selenium.webdriver.common.by import By
 
+from selenium.webdriver.firefox.options import Options as FirefoxOptions
+from selenium.webdriver import Firefox
+
+
+def get_firefox_driver():
+    """ This method is used to get the Firefox driver """
+
+    options = FirefoxOptions()
+    options.add_argument('--headless')
+    options.add_argument('--no-sandbox')
+    options.add_argument('--start-maximized')
+    options.add_argument('--disable-infobars')
+    options.add_argument('--disable-extensions')
+    options.add_argument('--disable-popup-blocking')
+    options.add_argument('--disable-dev-shm-usage')
+
+    driver = Firefox(options=options)
+
+    return driver
+
 
 def get_random_user_agent():
     """ This method is used to get the random user agent """
@@ -48,7 +68,8 @@ def get_chrome_driver():
 def get_page_source_code(url):
     """ This method is used to get the page source code from the url """
 
-    header = {"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/88.0.4324.152 Safari/537.3"}
+    header = {
+        "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/88.0.4324.152 Safari/537.3"}
     response = requests.get(url, headers=header)
 
     soup = BS(response.content, "html.parser")
@@ -203,7 +224,7 @@ def get_reviews(driver, soup, seller_username, product_id, number_of_reviews):
         driver.get(url)
         if driver.title == "Security Measure":
             driver.quit()
-            driver = get_chrome_driver()
+            driver = get_firefox_driver()
             print("[+ Ebay +] Getting chrome driver for scraping reviews...")
             continue
         else:
@@ -290,7 +311,7 @@ def scrap_ebay(keyword, number_of_products, number_of_reviews):
 
     print(f"[+ Ebay +] Search Keyword: {keyword}")
 
-    driver = get_chrome_driver()
+    driver = get_firefox_driver()
 
     product_links = scrap_product_urls(keyword, number_of_products)
     print(f"[+ Ebay +] Product Link is found for {keyword}")

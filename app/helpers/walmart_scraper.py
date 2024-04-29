@@ -7,6 +7,26 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.wait import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 
+from selenium.webdriver.firefox.options import Options as FirefoxOptions
+from selenium.webdriver import Firefox
+
+
+def get_firefox_driver():
+    """ This method is used to get the Firefox driver """
+
+    options = FirefoxOptions()
+    options.add_argument('--headless')
+    options.add_argument('--no-sandbox')
+    options.add_argument('--start-maximized')
+    options.add_argument('--disable-infobars')
+    options.add_argument('--disable-extensions')
+    options.add_argument('--disable-popup-blocking')
+    options.add_argument('--disable-dev-shm-usage')
+
+    driver = Firefox(options=options)
+
+    return driver
+
 
 def get_chrome_driver():
     """ This method is used to get the chrome driver """
@@ -297,7 +317,7 @@ def scrap_product_data(driver, product_url, keyword, number_of_reviews):
 
     while "blocked" in dr_link:
         driver.quit()
-        driver = get_chrome_driver()
+        driver = get_firefox_driver()
         driver.get(product_url)
         time.sleep(2)
         dr_link = driver.current_url
@@ -347,7 +367,7 @@ def scrap_walmart(keyword, number_of_products, number_of_reviews):
 
     print(f"[+ Walmart +] Search Keyword: {keyword}")
 
-    driver = get_chrome_driver()
+    driver = get_firefox_driver()
 
     product_links = get_product_listings(driver, keyword, number_of_products)
 
