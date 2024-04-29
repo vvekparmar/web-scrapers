@@ -4,11 +4,9 @@ import uvicorn
 from fastapi import FastAPI
 from pydantic import BaseModel
 
-sys.path.append('app/app/helpers')
-from ebay_scraper import scrap_ebay
-from amazon_scraper import scrap_amazon
-from walmart_scraper import scrap_walmart
-
+from app.helpers.ebay_scraper import scrap_ebay
+from app.helpers.amazon_scraper import scrap_amazon
+from app.helpers.walmart_scraper import scrap_walmart
 
 fastapi_app = FastAPI()
 
